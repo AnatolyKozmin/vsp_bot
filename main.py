@@ -15,7 +15,7 @@ from excel_worker.read_user_data import create_user_data
 bot = Bot(os.getenv('TOKEN'))
 dp = Dispatcher()
 dp.include_router(group_router)
-dp.message.middleware(DbSessionMiddleware)
+dp.message.middleware(DbSessionMiddleware())
 
 
 async def main():
