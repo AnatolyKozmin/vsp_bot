@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Boolean, ForeignKey, String, Integer
+from sqlalchemy import Column, BigInteger, Boolean, ForeignKey, String, Integer, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.engine import Base
@@ -50,11 +50,31 @@ class Mutes(Base):
 class Quotes(Base):
     __tablename__ = 'quotes'
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    author_id: Mapped[int] = mapped_column(BigInteger) 
-    author_username: Mapped[str] = mapped_column(String, nullable=True) 
-    author_first_name: Mapped[str] = mapped_column(String)  
-    quote_text: Mapped[str] = mapped_column(String)  
-    added_by_id: Mapped[int] = mapped_column(BigInteger)  
-    added_at: Mapped[str] = mapped_column(String)  
-    chat_id: Mapped[int] = mapped_column(BigInteger)  
-    image_path: Mapped[str] = mapped_column(String, nullable=True)  
+    author_id: Mapped[int] = mapped_column(BigInteger)  # Telegram ID автора цитаты
+    author_username: Mapped[str] = mapped_column(String, nullable=True)  # Telegram username автора
+    author_first_name: Mapped[str] = mapped_column(String)  # Имя автора
+    quote_text: Mapped[str] = mapped_column(String)  # Текст цитаты
+    added_by_id: Mapped[int] = mapped_column(BigInteger)  # Telegram ID добавившего цитату
+    added_at: Mapped[str] = mapped_column(String)  # Дата добавления
+    chat_id: Mapped[int] = mapped_column(BigInteger)  # ID чата
+    image_path: Mapped[str] = mapped_column(String, nullable=True)  # Путь к фото профиля
+
+
+class WakeUps(Base):
+    __tablename__ = 'wake_ups'
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)  # Telegram ID пользователя
+    username: Mapped[str] = mapped_column(String)  # Telegram username
+    first_name: Mapped[str] = mapped_column(String)  # Имя пользователя
+    wake_up_time: Mapped[DateTime] = mapped_column(DateTime)  # Время разбудяшки
+    chat_id: Mapped[int] = mapped_column(BigInteger)  # ID чата, где запланирована разбудяшка
+
+
+class BeerStats(Base):
+    __tablename__ = 'beer_stats'
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)  # Telegram ID пользователя
+    username: Mapped[str] = mapped_column(String)  # Telegram username
+    first_name: Mapped[str] = mapped_column(String)  # Имя пользователя
+    beer_count: Mapped[int] = mapped_column(Integer, default=0)  # Количество кружек пива
+    last_poured: Mapped[DateTime] = mapped_column(DateTime)  # Дата последнего наливания

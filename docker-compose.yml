@@ -1,0 +1,40 @@
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: vsp_bot_db
+      POSTGRES_USER: vsp_user
+      POSTGRES_PASSWORD: vsp_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+
+  bot:
+    build: .
+    command: sh -c "alembic upgrade head && python main.py"  # Применяем миграции перед запуском
+    environment:
+      TOKEN: ${TOKEN}  # Токен бота из .env файла
+      DB_URL: postgresql+asyncpg://vsp_user:vsp_password@db:5432/vsp_bot_db
+      DB_SYNC: postgres://vsp_user:vsp_password@db:5432/vsp_bot_db
+    depends_on:
+      - db
+    volumes:
+      - ./user_data.xlsx:/app/user_data.xlsx
+      - ./mero.xlsx:/app/mero.xlsx
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
