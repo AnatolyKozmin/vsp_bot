@@ -16,3 +16,17 @@ class Users(Base):
     tg_username: Mapped[str] = mapped_column(String)
     metro: Mapped[str] = mapped_column(String)
     
+    
+class Entertainments(Base):
+    __tablename__ = 'entertainments'
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_ent: Mapped[str] = mapped_column(String)
+    declension: Mapped[str] = mapped_column(String)
+
+
+class Events(Base):
+    __tablename__ = 'events'
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    entertam: Mapped[int] = mapped_column(ForeignKey('entertainments.id'))
+    who: Mapped[int] = mapped_column(ForeignKey('users.id'))
+    whom: Mapped[int] = mapped_column(ForeignKey('users.id'))
