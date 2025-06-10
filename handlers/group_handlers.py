@@ -353,12 +353,6 @@ async def ring_command(message: types.Message, session: AsyncSession):
     
     await asyncio.sleep(2)
     
-    await message.answer("Два бравых вспышкинца расходятся")
-    await asyncio.sleep(2)
-    
-    await message.answer("Пушкин и Дантес в ахуе с этих типов")
-    await asyncio.sleep(2)
-    
     await message.answer("💥 БУМ НАХУЙ!")
     await asyncio.sleep(1)
 
