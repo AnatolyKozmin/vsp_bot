@@ -1,4 +1,5 @@
 import asyncio
+import textwrap
 from aiogram import Bot, Router, F, types
 from aiogram.filters import CommandObject
 from sqlalchemy import select, func
@@ -16,6 +17,7 @@ from io import BytesIO
 from database.models import BeerStats, Mutes, Quotes, Users, Entertainments, Events, WakeUps
 from aiogram.types import BufferedInputFile   # ← вместо InputFile
 import traceback
+
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent   # …/vsp_bot_2.0
@@ -224,22 +226,80 @@ async def quote_command(message: types.Message, session: AsyncSession, bot: Bot)
         session.add(new_quote)
         await session.commit()
 
-        # Формируем ответ
-        response_text = f"Цитата оформлена"
-        if photo_path:
-            response_text += "\n\nФото сохранено"
-        await message.answer(text=response_text)
+        # Генерация изображения с цитатой
+        try:
+            template_path = TEMPLATES_DIR / "les.jpg"
+            if not template_path.exists():
+                return await message.answer("❌ Шаблон изображения не найден.")
+
+            image = Image.open(template_path).convert("RGB")
+            draw = ImageDraw.Draw(image)
+
+            # Шрифт
+            font_path = TEMPLATES_DIR / "Qanelas_ExtraBold.otf"
+            if not font_path.exists():
+                return await message.answer("❌ Шрифт не найден.")
+
+            quote_font = ImageFont.truetype(font_path, 60)
+            author_font = ImageFont.truetype(font_path, 30)
+
+            # Размеры изображения
+            image_width, image_height = image.size
+
+            # Аватарка (в виде кружка)
+            avatar_y = 50  # Высота аватарки сверху
+            if photo_path and Path(photo_path).is_file():
+                avatar = Image.open(photo_path).resize((150, 150)).convert("RGB")
+
+                # Создаем маску для кружка
+                mask = Image.new("L", (150, 150), 0)
+                mask_draw = ImageDraw.Draw(mask)
+                mask_draw.ellipse((0, 0, 150, 150), fill=255)
+
+                # Центрируем аватарку
+                avatar_x = (image_width - 150) // 2  # Центрируем по горизонтали
+                avatar = Image.composite(avatar, Image.new("RGB", (150, 150), (0, 0, 0)), mask)
+                image.paste(avatar, (avatar_x, avatar_y), mask)
+
+            # Текст цитаты
+            max_width = image_width - 100  # Максимальная ширина текста (с отступами)
+            wrapped_text = textwrap.wrap(quote_text, width=40)  # Разбиваем текст на строки
+
+            # Рисуем текст построчно
+            text_y = avatar_y + 150 + 50  # Под аватаркой с увеличенным отступом
+            for line in wrapped_text:
+                text_bbox = draw.textbbox((0, 0), line, font=quote_font)  # Используем textbbox
+                text_width = text_bbox[2] - text_bbox[0]
+                text_height = text_bbox[3] - text_bbox[1]
+                text_x = (image_width - text_width) // 2  # Центрируем по горизонтали
+                draw.text((text_x, text_y), line, font=quote_font, fill="white")
+                text_y += text_height + 10  # Отступ между строками
+
+            # Подпись автора
+            author_text = f"— {author.full_name or 'Неизвестный автор'}"
+            author_bbox = draw.textbbox((0, 0), author_text, font=author_font)  # Используем textbbox
+            author_width = author_bbox[2] - author_bbox[0]
+            author_height = author_bbox[3] - author_bbox[1]
+            author_x = (image_width - author_width) // 2  # Центрируем по горизонтали
+            author_y = image_height - author_height - 50  # Почти в самом низу изображения
+            draw.text((author_x, author_y), author_text, font=author_font, fill="white")
+
+            # Отправка изображения
+            buf = BytesIO()
+            image.save(buf, "JPEG")
+            buf.seek(0)
+            await message.answer_photo(
+                BufferedInputFile(buf.getvalue(), filename="quote.jpg"),
+                caption="Ещё одна цитата поймана"
+            )
+
+        except Exception as e:
+            traceback.print_exc()
+            await message.answer("❌ Произошла ошибка при генерации изображения с цитатой.")
     else:
         await message.answer(text="Чтобы запечатлеть цитату, ответьте на сообщение, содержащее цитату.")
 
 
-
-from aiogram.types import InputFile
-from io import BytesIO
-
-import traceback
-
-import textwrap
 
 @group_router.message(F.text == "!мудрость")
 async def wisdom_command(message: types.Message, session: AsyncSession):
@@ -326,6 +386,9 @@ async def wisdom_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!ринг"))
 async def ring_command(message: types.Message, session: AsyncSession):
+    # Ваш Telegram username
+    bot_creator_username = "yanejettt"
+
     if not message.reply_to_message:
         await message.answer(
             text="❌ Чтобы выйти на ринг, ответьте на сообщение человека, с которым хотите сразиться."
@@ -334,6 +397,13 @@ async def ring_command(message: types.Message, session: AsyncSession):
 
     challenger = message.from_user
     opponent = message.reply_to_message.from_user
+
+    # Если кто-то пытается вызвать создателя бота
+    if opponent.username == bot_creator_username:
+        await message.answer(
+            text="Правда думаешь, что ты выиграешь?"
+        )
+        return
 
     # Проверяем, не замьючен ли вызывающий
     mute_check = await session.execute(
@@ -348,19 +418,26 @@ async def ring_command(message: types.Message, session: AsyncSession):
 
     # Создаем интригу
     fight_msg = await message.answer(
-    f"⚔️ <b>{challenger.full_name}</b> вызывает на ринг <b>{opponent.full_name}</b>!",
-    parse_mode="HTML")
+        f"⚔️ <b>{challenger.full_name}</b> вызывает на ринг <b>{opponent.full_name}</b>!",
+        parse_mode="HTML"
+    )
     
     await asyncio.sleep(2)
-    
-    await message.answer("💥 БУМ НАХУЙ!")
+    await message.answer(text=random.choice(["💥 БУМ НАХУЙ!", "💥 Иииииииууу"]))
     await asyncio.sleep(1)
 
     # Определяем победителя
-    winner = random.choice([challenger, opponent])
-    loser = opponent if winner == challenger else challenger
+    if challenger.username == bot_creator_username:
+        winner = challenger
+        loser = opponent
+    elif opponent.username == bot_creator_username:
+        winner = opponent
+        loser = challenger
+    else:
+        winner = random.choice([challenger, opponent])
+        loser = opponent if winner == challenger else challenger
 
-    # Создаем мьют
+    # Создаем мьют для проигравшего
     mute_end = datetime.now() + timedelta(minutes=10)
     new_mute = Mutes(
         user_id=loser.id,
@@ -399,7 +476,6 @@ async def ring_command(message: types.Message, session: AsyncSession):
 
 
 
-
 @group_router.message(F.text == "!анмут")
 async def unban_command(message: types.Message, session: AsyncSession):
     # Получаем всех пользователей с активным мутом в этом чате
@@ -431,8 +507,6 @@ async def unban_command(message: types.Message, session: AsyncSession):
 
     await session.commit()
     await message.answer(f"🔓 Размьючено пользователей: {count}")
-
-
 
 
 
@@ -666,7 +740,9 @@ async def wake_up_list_command(message: types.Message, session: AsyncSession):
     await message.answer(text=response_text, parse_mode="HTML")
 
 
-
+@group_router.message(F.text.startswith("!v"))
+async def check_version(message: types.message):
+    await message.answer(text='Ver.1.0.7')
 
 
 @group_router.message(F.text == "!орг дня")
@@ -711,7 +787,6 @@ async def life_command(message: types.Message, session: AsyncSession):
     target_user = None
 
     if message.reply_to_message:
-        # Если команда отправлена в ответ на сообщение, берем данные о пользователе, на сообщение которого ответили
         reply_username = message.reply_to_message.from_user.username
         if reply_username and reply_username.startswith('@'):
             reply_username = reply_username[1:]
@@ -978,6 +1053,35 @@ async def beer_top_command(message: types.Message, session: AsyncSession):
 
     await message.answer(text=response_text, parse_mode="HTML")
 
+
+@group_router.message(F.text.contains("брат"))
+async def brother_command(message: types.Message):
+    # Проверяем, что слово "брат" является отдельным словом
+    import re
+    if re.search(r"\bбрат\b|\bБрат\b", message.text):
+        response_text = "опа братский брат"
+        await message.answer(text=response_text)
+
+@group_router.message(F.text.contains("семья" or "семьи"))
+async def family_command(message: types.Message):
+
+    import re
+    if re.search(r"\bсемья\b|\bсемьи\b|\bсемейные\b|\bсемейный\b", message.text):
+        try:
+           
+            image_path = TEMPLATES_DIR / "dominik.jpg" 
+            if not image_path.exists():
+                await message.answer("❌ Изображение не найдено.")
+                return
+
+
+            await message.answer_photo(
+                BufferedInputFile(image_path.read_bytes(), filename="dominik.jpg"),
+            )
+
+        except Exception as e:
+            traceback.print_exc()
+            await message.answer("❌ Произошла ошибка при обработке изображения.")
 
 
 @group_router.message(F.text == "!помощь")
