@@ -24,9 +24,9 @@ services:
 
   bot:
     build: .
-    command: sh -c "alembic upgrade head && python main.py"  # Применяем миграции перед запуском
+    command: sh -c "alembic upgrade head && python main.py"  
     environment:
-      TOKEN: ${TOKEN}  # Токен бота из .env файла
+      TOKEN: ${TOKEN}  
       DB_URL: postgresql+asyncpg://vsp_user:vsp_password@db:5432/vsp_bot_db
       DB_SYNC: postgres://vsp_user:vsp_password@db:5432/vsp_bot_db
     depends_on:

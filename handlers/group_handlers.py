@@ -20,7 +20,7 @@ import traceback
 
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent   # …/vsp_bot_2.0
+BASE_DIR = Path(__file__).resolve().parent.parent   
 TEMPLATES_DIR = BASE_DIR / "templates"       
 
 
@@ -38,7 +38,6 @@ async def attack_command(message: types.Message):
         await message.answer(text=response_text)
     else:
         await message.answer(text="Чтобы использовать команду !уебать, ответьте на сообщение человека, которого хотите 'уебать'.")
-
 
 
 @group_router.message(F.text.startswith("!роль"))
@@ -111,22 +110,19 @@ async def role_command(message: types.Message, session: AsyncSession):
     await message.answer(text=response_text, parse_mode="HTML")
 
 
-
-
-
 @group_router.message(F.text.startswith("!инфа"))
 async def info_command(message: types.Message, session: AsyncSession):
     target_user = None
 
-    # 1. Если reply — ищем по tg_id, если не найдено — по username (с @ и без)
+
     if message.reply_to_message:
         reply_user = message.reply_to_message.from_user
-        # Поиск по tg_id
+
         user_result = await session.execute(
             select(Users).filter(Users.tg_id == str(reply_user.id))
         )
         target_user = user_result.scalars().first()
-        # Если не нашли по tg_id — ищем по username
+
         if not target_user and reply_user.username:
             username = reply_user.username
             if username.startswith('@'):
@@ -138,7 +134,7 @@ async def info_command(message: types.Message, session: AsyncSession):
             )
             target_user = user_result.scalars().first()
 
-    # 2. Если есть аргумент — ищем по фамилии (fio)
+
     else:
         command_parts = message.text.split(maxsplit=1)
         if len(command_parts) > 1:
@@ -148,21 +144,20 @@ async def info_command(message: types.Message, session: AsyncSession):
             )
             target_user = user_result.scalars().first()
 
-    # 3. Формируем ответ
+
     if target_user:
-        # Форматируем дату рождения
+
         birthday_str = "—"
         if target_user.birthday:
             try:
-                # Если дата хранится как строка "YYYY-MM-DD ..." — берем только дату
+
                 birthday_str = str(target_user.birthday)
                 if len(birthday_str) >= 10:
                     birthday_str = birthday_str[:10]
-                # Если дата — объект, можно birthday_str = target_user.birthday.strftime("%d.%m.%Y")
+
             except Exception:
                 pass
 
-        # Username всегда с @
         tg_username = target_user.tg_username or '—'
         if tg_username != '—' and not tg_username.startswith('@'):
             tg_username = '@' + tg_username
@@ -184,9 +179,6 @@ async def info_command(message: types.Message, session: AsyncSession):
         )
 
     await message.answer(text=response_text, parse_mode="HTML")
-
-
-
 
 
 @group_router.message(F.text.startswith("!цитата"))
@@ -298,7 +290,6 @@ async def quote_command(message: types.Message, session: AsyncSession, bot: Bot)
             await message.answer("❌ Произошла ошибка при генерации изображения с цитатой.")
     else:
         await message.answer(text="Чтобы запечатлеть цитату, ответьте на сообщение, содержащее цитату.")
-
 
 
 @group_router.message(F.text == "!мудрость")
@@ -475,7 +466,6 @@ async def ring_command(message: types.Message, session: AsyncSession):
         await session.rollback()
 
 
-
 @group_router.message(F.text == "!анмут")
 async def unban_command(message: types.Message, session: AsyncSession):
     # Получаем всех пользователей с активным мутом в этом чате
@@ -509,18 +499,24 @@ async def unban_command(message: types.Message, session: AsyncSession):
     await message.answer(f"🔓 Размьючено пользователей: {count}")
 
 
-
 @group_router.message(F.text == "!рулетка")
 async def roulette_command(message: types.Message, session: AsyncSession):
-    import random
-    from datetime import datetime, timedelta
-    from aiogram.types import ChatPermissions
+    special_username = "nikitazin" 
+
+    if message.from_user.username == special_username:
+        # Для Никита
+        if random.randint(1, 6) == 1:
+            response_text = "🎯 Никит, в этот раз судьба злодейка замьютила."
+        else:
+            response_text = " 🎉 Либо Никит, на этот раз пронесло."
+        await message.answer(text=response_text)
+        return
+
 
     if random.randint(1, 6) == 1:
-        # Определяем время окончания мута
         mute_end = datetime.now() + timedelta(minutes=10)
 
-        # Создаем запись о муте в базе данных
+
         new_mute = Mutes(
             user_id=message.from_user.id,
             chat_id=message.chat.id,
@@ -534,7 +530,6 @@ async def roulette_command(message: types.Message, session: AsyncSession):
         session.add(new_mute)
         await session.commit()
 
-        # Мьютим пользователя
         try:
             await message.chat.restrict(
                 user_id=message.from_user.id,
@@ -546,18 +541,16 @@ async def roulette_command(message: types.Message, session: AsyncSession):
                 f"Ты отправлен в мут на 10 минут."
             )
         except Exception as e:
-            # Если не удалось замьютить, откатываем запись в базе данных
+
             await session.rollback()
             response_text = (
-                f"⚠️ @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат"
+                f"⚠️ @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат "
                 f"но бот не смог тебя замьютить. Возможно, у него недостаточно прав."
             )
     else:
         response_text = f"🎉 @{message.from_user.username or message.from_user.full_name}, тебе повезло, брат! В этот раз обошлось."
 
     await message.answer(text=response_text)
-
-
 
 
 @group_router.message(F.text == "!кладбище")
@@ -580,7 +573,6 @@ async def graveyard_command(message: types.Message, session: AsyncSession):
         response_text = "✅ В чате нет замьюченных пользователей."
 
     await message.answer(text=response_text, parse_mode="HTML")
-
 
 
 @group_router.message(F.text.startswith("!кто"))
@@ -606,7 +598,6 @@ async def who_command(message: types.Message, session: AsyncSession):
         response_text = "Не могу определить, так как нет в бд нихуя нет."
 
     await message.answer(text=response_text)
-
 
 
 @group_router.message(F.text.startswith("!когда"))
@@ -662,13 +653,23 @@ async def wake_up_command(message: types.Message, session: AsyncSession, bot: Bo
         await message.answer(text="❌ Некорректный формат времени. Используйте YYYY-MM-DD HH:MM:SS.")
         return
 
-    # Определяем, кого разбудить
+
+    wake_up_time = wake_up_time - timedelta(hours=3)  
+
+
     if message.reply_to_message:
         target_user = message.reply_to_message.from_user
     else:
         target_user = message.from_user
 
-    # Записываем разбудяшку в базу данных
+
+    user_result = await session.execute(
+        select(Users).filter(Users.tg_id == str(target_user.id))
+    )
+    user = user_result.scalars().first()
+    phone_number = user.phone_number if user else "—"
+
+
     new_wake_up = WakeUps(
         user_id=target_user.id,
         username=target_user.username or "Без username",
@@ -679,18 +680,19 @@ async def wake_up_command(message: types.Message, session: AsyncSession, bot: Bo
     session.add(new_wake_up)
     await session.commit()
 
-    # Подтверждаем запись
+
     response_text = (
         f"✅ Разбудяшка запланирована для @{target_user.username or target_user.first_name} "
-        f"на {wake_up_time.strftime('%Y-%m-%d %H:%M:%S')}."
+        f"на {wake_up_time.strftime('%Y-%m-%d %H:%M:%S')}.\n"
     )
-    await message.answer(text=response_text)
+    await message.answer(text=response_text, parse_mode="HTML")
 
-    # Планируем задачу через aioscheduler
-    async def send_wake_up_message(bot: Bot, chat_id: int, username: str, first_name: str):
+
+    async def send_wake_up_message(bot: Bot, chat_id: int, username: str, first_name: str, phone_number: str):
         await bot.send_message(
             chat_id=chat_id,
-            text=f"⏰ @{username or first_name}, пора вставать!\n\nТыкните человечка кто-то",
+            text=f"⏰ @{username or first_name}, разбудите брата!\n\n"
+                 f"📱 Номер мобилы: <code>{phone_number}</code>",
             parse_mode="HTML"
         )
 
@@ -701,7 +703,8 @@ async def wake_up_command(message: types.Message, session: AsyncSession, bot: Bo
             "bot": bot,
             "chat_id": message.chat.id,
             "username": target_user.username or "Без username",
-            "first_name": target_user.first_name or "Без имени"
+            "first_name": target_user.first_name or "Без имени",
+            "phone_number": phone_number
         }
     )
 
@@ -742,7 +745,7 @@ async def wake_up_list_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!v"))
 async def check_version(message: types.message):
-    await message.answer(text='Ver.1.0.7')
+    await message.answer(text='Ver.1.0.8')
 
 
 @group_router.message(F.text == "!орг дня")
@@ -968,7 +971,6 @@ async def dolbaeb_check(message: types.Message):
     await message.answer('Бля, ты серьёзно ща ?')
 
 
-
 @group_router.message(F.text.startswith("!налить пиво"))
 async def pour_beer_command(message: types.Message, session: AsyncSession):
     # Убираем лишние пробелы и парсим команду
@@ -1061,6 +1063,7 @@ async def brother_command(message: types.Message):
     if re.search(r"\bбрат\b|\bБрат\b", message.text):
         response_text = "опа братский брат"
         await message.answer(text=response_text)
+
 
 @group_router.message(F.text.contains("семья" or "семьи"))
 async def family_command(message: types.Message):
