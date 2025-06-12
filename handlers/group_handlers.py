@@ -2,6 +2,7 @@ import asyncio
 import textwrap
 from aiogram import Bot, Router, F, types
 from aiogram.filters import CommandObject
+import requests
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,8 +17,11 @@ import random
 from aiogram.types import ChatPermissions
 from io import BytesIO
 from database.models import BeerStats, Mutes, Quotes, Users, Entertainments, Events, WakeUps
-from aiogram.types import BufferedInputFile   # ← вместо InputFile
+from aiogram.types import BufferedInputFile   
 import traceback
+from utils.deepseek_worker import chat_stream
+from utils.metro_coords import metro_coordinates
+from geopy.distance import geodesic
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent   
@@ -1090,9 +1094,106 @@ async def jokker_command(message: types.Message):
     await message.answer(text='Был вчера, есть сегодня и будет завтра - Арс, вопросы ?')
 
 
-@group_router.message(F.text == '!обосновать')
-async def get_reason(message: types.Message): 
-    await message.answer()
+
+@group_router.message(F.text.startswith("!дикпик"))
+async def deepseek_command(message: types.Message):
+    command_parts = message.text.split(maxsplit=1)
+    if len(command_parts) < 2:
+        await message.answer(text="❌ Пожалуйста, укажите вопрос. Пример: !дикпик Как дела?")
+        return
+
+    question = command_parts[1].strip()
+
+    try:
+        
+        response = chat_stream(question)
+        if response:
+            await message.answer(text=response)
+        else:
+            await message.answer(text="❌ Ошибка при обращении к DeepSeek.")
+    except Exception as e:
+        await message.answer(text="❌ Произошла ошибка при обработке запроса.")
+        traceback.print_exc()
+
+
+@group_router.message(F.text.startswith("!обосновать"))
+async def get_reason(message: types.Message):
+    if message.reply_to_message:
+        # Бот отвечает на сообщение, на которое пользователь отправил команду
+        await message.reply_to_message.reply(text="а тебя это ебать не должно.")
+    else:
+        # Если команда отправлена без ответа на сообщение
+        await message.answer(text="❌ Чтобы использовать команду !обосновать, ответьте на сообщение.")
+
+
+@group_router.message(F.text.startswith("!адрес"))
+async def address_command(message: types.Message, session: AsyncSession):
+    command_parts = message.text.split(maxsplit=1)
+    if len(command_parts) < 2:
+        await message.answer(text="❌ Пожалуйста, укажите адрес. Пример: !адрес Ясный проезд 18")
+        return
+
+    address = command_parts[1].strip()
+    full_address = f"г. Москва, {address}"  # Добавляем "г. Москва" к запросу
+
+    try:
+        
+        YANDEX_API_KEY = os.getenv('YANDEX_API_KEY') 
+        YANDEX_GEOCODER_URL = "https://geocode-maps.yandex.ru/1.x/"
+        params = {
+            "apikey": YANDEX_API_KEY,
+            "geocode": full_address,
+            "format": "json"
+        }
+        response = requests.get(YANDEX_GEOCODER_URL, params=params)
+        response_data = response.json()
+
+        # Проверяем, удалось ли получить координаты
+        if "response" not in response_data or "GeoObjectCollection" not in response_data["response"]:
+            await message.answer(text="❌ Не удалось найти координаты для указанного адреса.")
+            return
+
+        if not response_data["response"]["GeoObjectCollection"]["featureMember"]:
+            await message.answer(text="❌ Не удалось найти координаты для указанного адреса.")
+            return
+
+        # Извлекаем координаты
+        geo_object = response_data["response"]["GeoObjectCollection"]["featureMember"][0]["GeoObject"]
+        coordinates = geo_object["Point"]["pos"].split()
+        longitude, latitude = map(float, coordinates)
+
+       
+        users_result = await session.execute(select(Users).filter(Users.metro.isnot(None)))
+        users_list = users_result.scalars().all()
+
+        if not users_list:
+            await message.answer("❌ В базе данных нет пользователей с указанным метро.")
+            return
+
+        
+        def calculate_distance(user_metro):
+            metro_coords = metro_coordinates.get(user_metro)
+            if metro_coords:
+                return geodesic((latitude, longitude), metro_coords).kilometers
+            return float('inf')  
+
+        user_distances = [
+            (user, calculate_distance(user.metro)) for user in users_list
+        ]
+        user_distances = [ud for ud in user_distances if ud[1] != float('inf')] 
+        user_distances.sort(key=lambda x: x[1])
+
+        # Формируем ответ с топ-3 ближайшими пользователями
+        response_text = "📍 <b>Топ-3 ближайших людей:</b>\n\n"
+        for idx, (user, distance) in enumerate(user_distances[:3], start=1):
+            tg_username = user.tg_username or "Без username"
+            response_text += f"{idx}. {user.fio or 'Без имени'} ({tg_username}) — {distance:.2f} км\n"
+
+        await message.answer(text=response_text, parse_mode="HTML")
+
+    except Exception as e:
+        traceback.print_exc()
+        await message.answer(text="❌ Произошла ошибка при обработке запроса.")
 
 @group_router.message(F.text == "!помощь")
 async def help_command(message: types.Message):
@@ -1129,5 +1230,10 @@ async def help_command(message: types.Message):
         "<b>Прочее:</b>\n"
         "• <code>!роль</code> — Узнать должность пользователя или найти сотрудников по должности.\n"
         "• <code>!выключить бота</code> — Команда позволяет выключить бота.\n"
+
+        "<b>Новое:</b>\n"
+        "• <code>!адрес Кремль</code> — Узнать топ 3 людей ближайщих по метро к этому адресу.\n"
+        "• <code>!дикпик ваш вопрос</code> — Спросить дипсик о чем-либо, надо подождать\n"
+        "• <code>!обосновать</code> — Бот поможет ответить на неудобный вопрос\n"
     )
     await message.answer(text=response_text, parse_mode="HTML")

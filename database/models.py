@@ -14,8 +14,7 @@ class Users(Base):
     birthday: Mapped[str] = mapped_column(String)
     insta: Mapped[str] = mapped_column(String)
     tg_username: Mapped[str] = mapped_column(String)
-    metro: Mapped[str] = mapped_column(String)
-    
+    metro: Mapped[str] = mapped_column(String)  # Название метро
 
 class Entertainments(Base):
     __tablename__ = 'entertainments'
