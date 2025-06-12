@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from PIL import Image, ImageDraw, ImageFont
 import os
+import re
 from pathlib import Path
 from datetime import datetime, timedelta
 from aiogram.types import InputFile
@@ -19,10 +20,8 @@ from aiogram.types import BufferedInputFile   # ← вместо InputFile
 import traceback
 
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent   
 TEMPLATES_DIR = BASE_DIR / "templates"       
-
 
 scheduler = AsyncIOScheduler()
 
@@ -377,7 +376,6 @@ async def wisdom_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!ринг"))
 async def ring_command(message: types.Message, session: AsyncSession):
-    # Ваш Telegram username
     bot_creator_username = "yanejettt"
 
     if not message.reply_to_message:
@@ -443,7 +441,7 @@ async def ring_command(message: types.Message, session: AsyncSession):
     session.add(new_mute)
     await session.commit()
 
-    # Мьютим проигравшего
+
     try:
         await message.chat.restrict(
             user_id=loser.id,
@@ -468,7 +466,6 @@ async def ring_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text == "!анмут")
 async def unban_command(message: types.Message, session: AsyncSession):
-    # Получаем всех пользователей с активным мутом в этом чате
     muted_users_result = await session.execute(
         select(Mutes).filter(
             Mutes.is_active == True,
@@ -481,16 +478,21 @@ async def unban_command(message: types.Message, session: AsyncSession):
         await message.answer("✅ Нет пользователей в муте.")
         return
 
-    from aiogram.types import ChatPermissions
-
     count = 0
     for mute in muted_users:
         try:
+            # Устанавливаем полный набор разрешений
             await message.chat.restrict(
                 user_id=mute.user_id,
-                permissions=ChatPermissions(can_send_messages=True)
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_polls=True,
+                    can_send_other_messages=True,
+                    can_add_web_page_previews=True
+                )
             )
-            mute.is_active = False
+            mute.is_active = False  # Деактивируем мут в базе данных
             count += 1
         except Exception as e:
             continue  # Можно добавить логирование ошибок
@@ -647,29 +649,28 @@ async def wake_up_command(message: types.Message, session: AsyncSession, bot: Bo
 
     datetime_str = command_parts[1].strip()
     try:
-        # Парсим дату и время
         wake_up_time = datetime.strptime(datetime_str, "%Y-%m-%d %H:%M:%S")
     except ValueError:
         await message.answer(text="❌ Некорректный формат времени. Используйте YYYY-MM-DD HH:MM:SS.")
         return
 
 
-    wake_up_time = wake_up_time - timedelta(hours=3)  
+    wake_up_time = wake_up_time + timedelta(hours=3)
 
-
+    # Определяем, кого разбудить
     if message.reply_to_message:
         target_user = message.reply_to_message.from_user
     else:
         target_user = message.from_user
 
-
+    # Получаем номер телефона из таблицы Users по tg_username
     user_result = await session.execute(
-        select(Users).filter(Users.tg_id == str(target_user.id))
+        select(Users).filter(Users.tg_username == target_user.username)
     )
     user = user_result.scalars().first()
     phone_number = user.phone_number if user else "—"
 
-
+    # Записываем разбудяшку в базу данных
     new_wake_up = WakeUps(
         user_id=target_user.id,
         username=target_user.username or "Без username",
@@ -680,19 +681,19 @@ async def wake_up_command(message: types.Message, session: AsyncSession, bot: Bo
     session.add(new_wake_up)
     await session.commit()
 
-
+    # Подтверждаем запись
     response_text = (
         f"✅ Разбудяшка запланирована для @{target_user.username or target_user.first_name} "
         f"на {wake_up_time.strftime('%Y-%m-%d %H:%M:%S')}.\n"
     )
     await message.answer(text=response_text, parse_mode="HTML")
 
-
+    # Планируем задачу через aioscheduler
     async def send_wake_up_message(bot: Bot, chat_id: int, username: str, first_name: str, phone_number: str):
         await bot.send_message(
             chat_id=chat_id,
-            text=f"⏰ @{username or first_name}, разбудите брата!\n\n"
-                 f"📱 Номер мобилы: <code>{phone_number}</code>",
+            text=f"⏰ @{username or first_name}, пора вставать!\n\n"
+                 f"📱 Накликайте ему по этим цифрам по-братски: <code>{phone_number}</code>",
             parse_mode="HTML"
         )
 
@@ -745,7 +746,7 @@ async def wake_up_list_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!v"))
 async def check_version(message: types.message):
-    await message.answer(text='Ver.1.0.9')
+    await message.answer(text='Ver.1.0.10')
 
 
 @group_router.message(F.text == "!орг дня")
@@ -890,23 +891,22 @@ async def interactive_commands(message: types.Message, session: AsyncSession):
         if entertainment:
             response_text = f"@{target_username}, тебя {entertainment.declension} (от {sender_username})"
         else:
-            # Fallback if not found in DB
             action_map = {
-                'уебать': 'тебя уебали',
-                'обнять': 'тебя обняли',
-                'секс': 'с тобой занялись сексом',
-                'пожать руку': 'тебе пожали руку',
-                'погладить': 'тебя погладили',
-                'отдать': 'тебе отдали кое-что',
-                'вахта': 'тебя отправили на вахту',
-                'проснуться': 'тебя разбудили',
-                'выпить': 'с тобой выпили',
-                'купаться': 'с тобой искупались',
-                'брызгаться': 'тебя обрызгали',
-                'наша раша': 'с тобой посмотрели Нашу Рашу'
+                'уебать': 'уебали',
+                'обнять': 'обняли',
+                'секс': 'пригласили заняться сексом с',
+                'пожать руку': 'пожали руку',
+                'погладить': 'погладили',
+                'вахта': 'отправили на вахту',
+                'проснуться': 'разбудили',
+                'выпить': 'тебя набухали',
+                'купаться': 'искупали',
+                'брызгаться': 'обрызгали',
+                'наша раша': 'пригласили посмотреть Нашу Рашу с',
+                'угостить': 'угостил пивом'
             }
             declension = action_map.get(command_text, command_text)
-            response_text = f"{target_username}, {declension}\n\n{sender_username}"
+            response_text = f"{target_username}, тебя {declension}\n\n{sender_username}"
         
         await message.answer(text=response_text)
     else:
@@ -936,20 +936,19 @@ async def interactive_commands(message: types.Message, session: AsyncSession):
             action_map = {
                 'уебать': 'уебали',
                 'обнять': 'обняли',
-                'секс': 'занялись сексом с',
+                'секс': 'пригласили заняться сексом с',
                 'пожать руку': 'пожали руку',
                 'погладить': 'погладили',
-                'отдать': 'отдали кое-что',
                 'вахта': 'отправили на вахту',
                 'проснуться': 'разбудили',
-                'выпить': 'выпили с',
+                'выпить': 'тебя набухали',
                 'купаться': 'искупали',
                 'брызгаться': 'обрызгали',
-                'наша раша': 'посмотрели Нашу Рашу с',
+                'наша раша': 'пригласили посмотреть Нашу Рашу с',
                 'угостить': 'угостил пивом'
             }
             declension = action_map.get(command_text, command_text)
-            response_text = f"@{target_username}, тебя {declension} (от {sender_username})"
+            response_text = f"{target_username},тебя {declension} (от {sender_username})"
         
         await message.answer(text=response_text)
 
@@ -1068,7 +1067,6 @@ async def brother_command(message: types.Message):
 @group_router.message(F.text.contains("семья" or "семьи"))
 async def family_command(message: types.Message):
 
-    import re
     if re.search(r"\bсемья\b|\bсемьи\b|\bсемейные\b|\bсемейный\b", message.text):
         try:
            
@@ -1086,6 +1084,15 @@ async def family_command(message: types.Message):
             traceback.print_exc()
             await message.answer("❌ Произошла ошибка при обработке изображения.")
 
+
+@group_router.message(F.text == '!кто жокер')
+async def jokker_command(message: types.Message):
+    await message.answer(text='Был вчера, есть сегодня и будет завтра - Арс, вопросы ?')
+
+
+@group_router.message(F.text == '!обосновать')
+async def get_reason(message: types.Message): 
+    await message.answer()
 
 @group_router.message(F.text == "!помощь")
 async def help_command(message: types.Message):
