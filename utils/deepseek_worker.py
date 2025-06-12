@@ -1,7 +1,9 @@
 import requests
 import json
+import os
+from dotenv import load_dotenv, find_dotenv
 
-API_KEY = "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" 
+API_KEY = os.getenv('API_KEY')
 MODEL = "deepseek/deepseek-r1"
 
 def process_content(content):

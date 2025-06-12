@@ -22,6 +22,8 @@ import traceback
 from utils.deepseek_worker import chat_stream
 from utils.metro_coords import metro_coordinates
 from geopy.distance import geodesic
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent   
