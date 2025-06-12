@@ -752,7 +752,7 @@ async def wake_up_list_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!v"))
 async def check_version(message: types.message):
-    await message.answer(text='Ver.1.0.10')
+    await message.answer(text='Ver.1.0.12')
 
 
 @group_router.message(F.text == "!орг дня")
@@ -1234,7 +1234,7 @@ async def help_command(message: types.Message):
         "• <code>!выключить бота</code> — Команда позволяет выключить бота.\n\n\n"
 
         "<b>Новое:</b>\n"
-        "• <code>!адрес Кремль</code> — Узнать топ 3 людей ближайщих по метро к этому адресу.\n"
+        "• <code>!адрес *какой-то адрес*</code> — Узнать топ 3 людей ближайщих по метро к этому адресу.\n"
         "• <code>!дикпик *ваш вопрос*</code> — Спросить дипсик о чем-либо, надо подождать\n"
         "• <code>!обосновать</code> — Бот поможет ответить на неудобный вопрос\n"
     )
