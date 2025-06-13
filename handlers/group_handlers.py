@@ -27,7 +27,21 @@ load_dotenv(find_dotenv())
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent   
-TEMPLATES_DIR = BASE_DIR / "templates"       
+TEMPLATES_DIR = BASE_DIR / "templates" 
+
+# ID пользователей, которые могут создавать опросы
+ALLOWED_USERS = {204826604, 1231550008, 922109605}  # Замените на реальные Telegram ID
+
+# ID группы, куда будет отправляться опрос
+TARGET_GROUP_ID = -1002831240250 # Замените на ID вашей группы
+
+
+# Машина состояний для создания опроса
+class PollCreation(StatesGroup):
+    waiting_for_question = State()
+    waiting_for_option_count = State()
+    waiting_for_options = State()
+    waiting_for_poll_type = State()
 
 scheduler = AsyncIOScheduler()
 
@@ -509,22 +523,16 @@ async def unban_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text == "!рулетка")
 async def roulette_command(message: types.Message, session: AsyncSession):
-    special_username = "smaginnd" 
+    special_username = "smaginnd"
 
-    if message.from_user.username == special_username:
-        # Для Никита
-        if random.randint(1, 6) == 1:
-            response_text = "🎯 Никит, в этот раз судьба злодейка замьютила."
-        else:
-            response_text = " 🎉 Либо Никит, на этот раз пронесло."
-        await message.answer(text=response_text)
-        return
+    # Проверяем, кто отправил команду
+    is_special_user = message.from_user.username == special_username
 
-
+    # Генерируем случайное число для рулетки
     if random.randint(1, 6) == 1:
         mute_end = datetime.now() + timedelta(minutes=10)
 
-
+        # Создаем запись о муте в базе данных
         new_mute = Mutes(
             user_id=message.from_user.id,
             chat_id=message.chat.id,
@@ -539,24 +547,34 @@ async def roulette_command(message: types.Message, session: AsyncSession):
         await session.commit()
 
         try:
+            # Ограничиваем права пользователя
             await message.chat.restrict(
                 user_id=message.from_user.id,
                 permissions=ChatPermissions(can_send_messages=False),
                 until_date=mute_end
             )
-            response_text = (
-                f"🎯 @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат "
-                f"Ты отправлен в мут на 10 минут."
-            )
+            if is_special_user:
+                response_text = (
+                    f"🎯 Никит, в этот раз судьба злодейка замьютила тебя на 10 минут."
+                )
+            else:
+                response_text = (
+                    f"🎯 @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат. "
+                    f"Ты отправлен в мут на 10 минут."
+                )
         except Exception as e:
-
             await session.rollback()
             response_text = (
-                f"⚠️ @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат "
+                f"⚠️ @{message.from_user.username or message.from_user.full_name}, тебе не повезло, брат, "
                 f"но бот не смог тебя замьютить. Возможно, у него недостаточно прав."
             )
     else:
-        response_text = f"🎉 @{message.from_user.username or message.from_user.full_name}, тебе повезло, брат! В этот раз обошлось."
+        if is_special_user:
+            response_text = "🎉 Никит, на этот раз пронесло."
+        else:
+            response_text = (
+                f"🎉 @{message.from_user.username or message.from_user.full_name}, тебе повезло, брат! В этот раз обошлось."
+            )
 
     await message.answer(text=response_text)
 
@@ -1196,6 +1214,151 @@ async def address_command(message: types.Message, session: AsyncSession):
     except Exception as e:
         traceback.print_exc()
         await message.answer(text="❌ Произошла ошибка при обработке запроса.")
+
+
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.filters import Command
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
+
+@group_router.message(Command("create"))
+async def start_poll_creation(message: types.Message, state: FSMContext):
+    """
+    Начало создания опроса. Проверяем, имеет ли пользователь доступ.
+    """
+    if message.from_user.id not in ALLOWED_USERS:
+        await message.answer("❌ У вас нет прав для создания опроса.")
+        return
+
+    await message.answer("Введите вопрос для опроса:")
+    await state.set_state(PollCreation.waiting_for_question)
+
+
+@group_router.message(PollCreation.waiting_for_question)
+async def set_poll_question(message: types.Message, state: FSMContext):
+    """
+    Устанавливаем вопрос для опроса.
+    """
+    await state.update_data(question=message.text)
+    await message.answer("Сколько вариантов ответа будет в опросе?")
+    await state.set_state(PollCreation.waiting_for_option_count)
+
+
+@group_router.message(PollCreation.waiting_for_option_count)
+async def set_option_count(message: types.Message, state: FSMContext):
+    """
+    Устанавливаем количество вариантов ответа.
+    """
+    try:
+        option_count = int(message.text)
+        if option_count < 2:
+            await message.answer("❌ Введите число больше 1.")
+            return
+
+        await state.update_data(option_count=option_count, options=[])
+        await message.answer("Введите первый вариант ответа:")
+        await state.set_state(PollCreation.waiting_for_options)
+    except ValueError:
+        await message.answer("❌ Пожалуйста, введите число.")
+
+
+@group_router.message(PollCreation.waiting_for_options)
+async def collect_options(message: types.Message, state: FSMContext):
+    """
+    Собираем варианты ответа.
+    """
+    data = await state.get_data()
+    options = data.get("options", [])
+    option_count = data["option_count"]
+
+    options.append(message.text)
+    await state.update_data(options=options)
+
+    if len(options) < option_count:
+        await message.answer(f"Введите следующий вариант ответа ({len(options) + 1}/{option_count}):")
+    else:
+        # Все варианты собраны
+        keyboard = ReplyKeyboardMarkup(
+            keyboard=[
+                [KeyboardButton(text="Один выбор")],
+                [KeyboardButton(text="Несколько вариантов")]
+            ],
+            resize_keyboard=True
+        )
+
+        await message.answer("Выбери тип опроса:", reply_markup=keyboard)
+        await state.set_state(PollCreation.waiting_for_poll_type)
+
+@group_router.message(PollCreation.waiting_for_poll_type)
+async def set_poll_type(message: types.Message, state: FSMContext, bot: Bot):
+    """
+    Устанавливаем тип опроса и отправляем его в группу.
+    """
+    poll_type = message.text.lower()
+    if poll_type not in {"один выбор", "несколько вариантов"}:
+        await message.answer("Пожалуйста, выбери 'Один выбор' или 'Несколько вариантов'.")
+        return
+
+    is_multiple_choice = poll_type == "несколько вариантов"
+
+    # Получаем данные из состояния
+    data = await state.get_data()
+    question = data["question"]
+    options = data["options"]
+
+    # Отправляем опрос в группу
+    await bot.send_poll(
+        chat_id=TARGET_GROUP_ID,
+        question=question,
+        options=options,
+        is_anonymous=False,
+        allows_multiple_answers=is_multiple_choice,
+    )
+
+    await message.answer("✅ Опрос успешно создан", reply_markup=types.ReplyKeyboardRemove())
+    await state.clear()
+
+@group_router.message(Command("check"))
+async def check_non_voters(message: types.Message, session: AsyncSession):
+    """
+    Проверяет, кто из пользователей в базе данных не проголосовал в последнем опросе.
+    """
+    # Получаем последний активный опрос
+    polls_result = await session.execute(
+        select(Events).filter(Events.type == "poll").order_by(Events.created_at.desc())
+    )
+    last_poll = polls_result.scalars().first()
+
+    if not last_poll:
+        await message.answer("Нет активных опросов.")
+        return
+
+    # Получаем список проголосовавших пользователей
+    poll_result = await session.execute(
+        select(Mutes).filter(Mutes.event_id == last_poll.id)  # Пример: таблица для голосов
+    )
+    voted_users = {vote.user_id for vote in poll_result.scalars().all()}
+
+    # Получаем всех пользователей из базы данных
+    users_result = await session.execute(select(Users))
+    users_list = users_result.scalars().all()
+
+    # Сравниваем списки
+    non_voters = [user for user in users_list if int(user.tg_id) not in voted_users]
+
+    if non_voters:
+        response_text = "📋 <b>Список тех кому дать пизды\n\n"
+        for user in non_voters:
+            response_text += f"• {user.fio or 'Без имени'} (@{user.tg_username or 'Без username'})\n"
+    else:
+        response_text = "Все солнышки"
+
+    await message.answer(text=response_text, parse_mode="HTML")
+
+@group_router.message(Command("chat_id"))
+async def get_chat_id(message: types.Message):
+    await message.answer(f'{message.chat.id}')
 
 @group_router.message(F.text == "!помощь")
 async def help_command(message: types.Message):
