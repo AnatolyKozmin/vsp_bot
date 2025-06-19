@@ -754,7 +754,7 @@ async def wake_up_list_command(message: types.Message, session: AsyncSession):
 
 @group_router.message(F.text.startswith("!v"))
 async def check_version(message: types.message):
-    await message.answer(text='Ver.1.0.12')
+    await message.answer(text='Ver.1.0.13')
 
 
 @group_router.message(F.text == "!орг дня")
