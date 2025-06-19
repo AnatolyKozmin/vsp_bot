@@ -29,12 +29,9 @@ load_dotenv(find_dotenv())
 BASE_DIR = Path(__file__).resolve().parent.parent   
 TEMPLATES_DIR = BASE_DIR / "templates" 
 
-# ID пользователей, которые могут создавать опросы
-ALLOWED_USERS = {204826604, 1231550008, 922109605}  # Замените на реальные Telegram ID
+ALLOWED_USERS = {204826604, 1231550008, 922109605}  
 
-# ID группы, куда будет отправляться опрос
-TARGET_GROUP_ID = -1002831240250 # Замените на ID вашей группы
-
+TARGET_GROUP_ID = -1002831240250 
 
 scheduler = AsyncIOScheduler()
 
@@ -518,14 +515,10 @@ async def unban_command(message: types.Message, session: AsyncSession):
 async def roulette_command(message: types.Message, session: AsyncSession):
     special_username = "smaginnd"
 
-    # Проверяем, кто отправил команду
     is_special_user = message.from_user.username == special_username
 
-    # Генерируем случайное число для рулетки
-    if random.randint(1, 6) == 1:
+    if random.randint(1, 3) == 1:
         mute_end = datetime.now() + timedelta(minutes=10)
-
-        # Создаем запись о муте в базе данных
         new_mute = Mutes(
             user_id=message.from_user.id,
             chat_id=message.chat.id,
@@ -540,7 +533,6 @@ async def roulette_command(message: types.Message, session: AsyncSession):
         await session.commit()
 
         try:
-            # Ограничиваем права пользователя
             await message.chat.restrict(
                 user_id=message.from_user.id,
                 permissions=ChatPermissions(can_send_messages=False),
@@ -570,7 +562,6 @@ async def roulette_command(message: types.Message, session: AsyncSession):
             )
 
     await message.answer(text=response_text)
-
 
 @group_router.message(F.text == "!кладбище")
 async def graveyard_command(message: types.Message, session: AsyncSession):
@@ -1207,7 +1198,6 @@ async def address_command(message: types.Message, session: AsyncSession):
     except Exception as e:
         traceback.print_exc()
         await message.answer(text="❌ Произошла ошибка при обработке запроса.")
-
 
 
 @group_router.message(F.text == "!помощь")
