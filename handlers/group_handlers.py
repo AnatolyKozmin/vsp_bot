@@ -514,7 +514,7 @@ async def unban_command(message: types.Message, session: AsyncSession):
 @group_router.message(F.text == "!рулетка")
 async def roulette_command(message: types.Message, session: AsyncSession):
     special_username = "smaginnd"
-
+    # хуй
     is_special_user = message.from_user.username == special_username
 
     if random.randint(1, 3) == 1:
